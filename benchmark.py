@@ -3,9 +3,10 @@ then checks every ruling it cites against the official register.
 
     python benchmark.py --tier small             # claude-haiku-4-5
     python benchmark.py --tier large --limit 5   # claude-sonnet-5-5, first five questions
+    PROVIDER=vertex GOOGLE_CLOUD_PROJECT=... python benchmark.py --tier large   # the same on Gemini (Vertex AI)
 
-Needs ANTHROPIC_API_KEY. Calls go through model-gateway: a repeated run is served from .gateway/cache, every
-call is written to .gateway/ledger.jsonl, and a run stops when it has spent BUDGET_USD. Answers and their
+Needs ANTHROPIC_API_KEY, or with PROVIDER=vertex the machine's Google credentials (or GOOGLE_OAUTH_ACCESS_TOKEN).
+Calls go through model-gateway: a repeated run is served from .gateway/cache, every call is written to .gateway/ledger.jsonl, and a run stops when it has spent BUDGET_USD. Answers and their
 verification go to resultados/<tier>.jsonl.
 
 What it measures is existence, not correctness: a ruling that exists but does not say what the answer claims
@@ -14,6 +15,7 @@ passes. The register holds no text, so that check needs the rulings themselves (
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -45,19 +47,35 @@ def resumen(filas: list[dict]) -> dict:
     }
 
 
-def correr(tier: str, limite: int | None) -> dict:
-    import anthropic
-    from model_gateway import Gateway
+def crear_gateway(tier: str):
+    """Claude with ANTHROPIC_API_KEY, or with PROVIDER=vertex Gemini on Vertex AI in GOOGLE_CLOUD_PROJECT."""
+    from model_gateway import GEMINI_TIERS, Gateway, GeminiClient
 
-    gateway = Gateway(anthropic.Anthropic(), routes={"responder": tier}, key=f"benchmark-{tier}",
-                      budget_usd=BUDGET_USD, ledger=AQUI / ".gateway" / "ledger.jsonl", cache=AQUI / ".gateway" / "cache")
+    opciones = dict(routes={"responder": tier}, key=f"benchmark-{tier}", budget_usd=BUDGET_USD,
+                    ledger=AQUI / ".gateway" / "ledger.jsonl", cache=AQUI / ".gateway" / "cache")
+    if os.environ.get("PROVIDER") != "vertex":
+        import anthropic
+        return Gateway(anthropic.Anthropic(), **opciones), 1000
+    cliente = None
+    if os.environ.get("GOOGLE_OAUTH_ACCESS_TOKEN"):
+        from google import genai
+        from google.oauth2.credentials import Credentials
+        cliente = genai.Client(vertexai=True, project=os.environ["GOOGLE_CLOUD_PROJECT"], location="global",
+                               credentials=Credentials(os.environ["GOOGLE_OAUTH_ACCESS_TOKEN"]))
+    # Gemini's thinking tokens count against max_tokens, so an answer of about 400 tokens needs far more than 1000.
+    return Gateway(GeminiClient(project=os.environ.get("GOOGLE_CLOUD_PROJECT"), client=cliente, attempts=8),
+                   tiers=GEMINI_TIERS, timeout=120, **opciones), 8000
+
+
+def correr(tier: str, limite: int | None) -> dict:
+    gateway, max_tokens = crear_gateway(tier)
     registro = cargar()
     preguntas = [json.loads(linea) for linea in PREGUNTAS.read_text(encoding="utf-8").splitlines() if linea.strip()][:limite]
     RESULTADOS.mkdir(exist_ok=True)
     filas = []
     with (RESULTADOS / f"{tier}.jsonl").open("w", encoding="utf-8") as salida:
         for pregunta in preguntas:
-            respuesta = gateway.create(task="responder", system=SISTEMA, max_tokens=1000,
+            respuesta = gateway.create(task="responder", system=SISTEMA, max_tokens=max_tokens,
                                        messages=[{"role": "user", "content": pregunta["pregunta"]}])
             texto = "".join(bloque.text for bloque in respuesta.content if bloque.type == "text")
             fila = {"id": pregunta["id"], "pregunta": pregunta["pregunta"], "respuesta": texto, "modelo": respuesta.model,
