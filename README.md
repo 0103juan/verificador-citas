@@ -54,9 +54,30 @@ case law), asks it to cite the rulings behind its answer and checks every citati
 - how many answers contain at least one invented ruling;
 - how many answers cite nothing.
 
-**It has not been run yet.** The estimate is about 0.06 USD for a run on the small model and 0.13 USD on the
-large one. That comes from list prices and answers of about 400 tokens; it was not measured. Calls go through
-[model-gateway](https://github.com/0103juan/model-gateway), so a repeated run is free and a run stops at 1 USD.
+### Results
+
+One run on 2 November 2026, on Gemini through Vertex AI (the Anthropic key is not on the machine that ran it), one
+answer per question, at the models' default temperature:
+
+| Model | Citations | Not in the register | Answers with at least one | Wrong justice | Cost |
+|---|---|---|---|---|---|
+| `gemini-3.5-flash-lite` (small) | 99 | 15 (15.2 %) | 14 of 30 | 0 | 0.02 USD |
+| `gemini-3.5-flash` (large) | 97 | 4 (4.1 %) | 3 of 30 | 0 | 0.38 USD |
+
+Every answer cited something, so no model refused. The small model invents about four times as often as the
+large one, and about half of its answers carry at least one ruling that does not exist. The cost includes three
+questions asked twice by mistake. The answers are written to `resultados/`, which is not committed.
+
+**I checked the 19 distinct citations flagged as not in the register against the Court's own site**
+(`corteconstitucional.gov.co/relatoria/<year>/<ruling>.htm`). All 19 return the site's empty page, while the
+rulings in the register return the ruling (three controls: `T-001/22`, `SU-006/23` and `C-355/06`). That matters
+because the register has gaps: for 2022, 304 of the 471 tutela numbers are in it. The Court's site does not publish
+the missing numbers either, so for these 19 "not in the register" and "does not exist" agree. A ruling that the Court
+published somewhere else would still be reported as missing.
+
+What is not measured: an invented citation that happens to match a real number and year, and a real ruling cited for
+something it does not say. Both pass. One run per model is also a sample, not a rate: the questions are a first draft
+and the gap between the models is the finding, not the exact percentages.
 
 The questions are a first draft and need a review by someone who knows the case law before the numbers mean
 anything.
@@ -68,6 +89,7 @@ uv run python registro.py             # downloads the register (one request, abo
 uv run python verificar.py texto.txt  # or pipe the text in
 uv run pytest                         # 14 tests, no network and no model
 ANTHROPIC_API_KEY=... uv run python benchmark.py --tier small
+PROVIDER=vertex GOOGLE_CLOUD_PROJECT=... uv run python benchmark.py --tier large   # the same on Gemini
 ```
 
 ## Limits

@@ -5,7 +5,7 @@ description = "Checks citations of Colombian Constitutional Court rulings agains
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=1.11",
-    "model-gateway",
+    "model-gateway[gemini]",
 ]
 
 [dependency-groups]
@@ -15,7 +15,7 @@ dev = ["pytest>=8"]
 package = false
 
 [tool.uv.sources]
-model-gateway = { git = "https://github.com/0103juan/model-gateway", tag = "v0.1.0" }
+model-gateway = { git = "https://github.com/0103juan/model-gateway", rev = "0e7fef80caff73994a5c8d8dde713da7d5b47e5c" }  # PR #21; move to v0.2.0 once tagged
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
